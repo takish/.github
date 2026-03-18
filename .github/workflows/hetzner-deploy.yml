@@ -1,0 +1,72 @@
+name: Deploy to Hetzner
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: "deploy-service のサービス名（var.services のキー）"
+        required: true
+        type: string
+      image:
+        description: "Docker イメージ名（ghcr.io/takish/ 以降）。省略時は service と同じ"
+        required: false
+        type: string
+        default: ""
+      migrate:
+        description: "マイグレーションコマンド（例: npx drizzle-kit migrate）"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image name
+        id: image
+        run: |
+          IMAGE="${{ inputs.image || inputs.service }}"
+          echo "name=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        run: |
+          docker build \
+            -t ghcr.io/takish/${{ steps.image.outputs.name }}:latest \
+            -t ghcr.io/takish/${{ steps.image.outputs.name }}:${{ github.sha }} .
+          docker push ghcr.io/takish/${{ steps.image.outputs.name }}:latest
+          docker push ghcr.io/takish/${{ steps.image.outputs.name }}:${{ github.sha }}
+
+      - name: Docker login on Hetzner
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: GITHUB_TOKEN
+          script: echo "$GITHUB_TOKEN" | docker login ghcr.io -u takish --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Hetzner
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: >-
+            deploy-service ${{ inputs.service }}
+            ghcr.io/takish/${{ steps.image.outputs.name }}:latest
+            ${{ inputs.migrate && format('--migrate "{0}"', inputs.migrate) }}
