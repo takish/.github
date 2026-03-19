@@ -74,7 +74,7 @@ jobs:
       - name: Cleanup old Docker images
         uses: appleboy/ssh-action@v1
         with:
-         host: ${{ secrets.HETZNER_HOST }}
+          host: ${{ secrets.HETZNER_HOST }}
           username: root
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: docker image prune -af --filter "until=24h"
