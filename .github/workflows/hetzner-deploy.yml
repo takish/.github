@@ -60,6 +60,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # pull の「前」に掃除する。後始末だけだと、イメージが数 GB ある
+      # サービスでは pull そのものが no space left on device で落ちる
+      # （FlowCapture の 5.6GB で実際に詰まった）。
+      #
+      # until フィルタは付けない。同じ日に複数回デプロイすると
+      # 「24時間以内」の古い世代が1つも消えず、そこから積み上がるため。
+      # 稼働中のコンテナが使っているイメージは prune の対象外なので、
+      # 動いているサービスには影響しない。ロールバックしたいときは
+      # GHCR に :sha タグが残っているのでそこから引き直せる
+      - name: Free disk space on Hetzner
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: docker image prune -af
+
       - name: Deploy to Hetzner
         uses: appleboy/ssh-action@v1
         with:
@@ -71,10 +88,12 @@ jobs:
             ghcr.io/takish/${{ steps.image.outputs.name }}:latest
             ${{ inputs.migrate && format('--migrate "{0}"', inputs.migrate) }}
 
+      # 差し替えで参照されなくなった旧イメージを落とす。
+      # 直前に prune 済みなので、ここで消えるのは今回置き換わった分だけ
       - name: Cleanup old Docker images
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.HETZNER_HOST }}
           username: root
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: docker image prune -af --filter "until=24h"
+          script: docker image prune -af
