@@ -17,10 +17,30 @@ on:
         required: false
         type: string
         default: ""
+      timeout_minutes:
+        description: "ジョブの上限（分）。イメージが大きくビルドに時間がかかるサービスは増やす"
+        required: false
+        type: number
+        default: 30
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    # 上限を付けないと、固まったジョブは GitHub の上限 6 時間（360 分）まで
+    # 回り続けて無料枠を食う。このワークフローは appleboy/ssh-action を
+    # 4 回使っており、SSH はリモートの応答待ちなので固まりやすい
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+
+    # 同じサービスのデプロイは直列にする。続けてマージすると
+    # docker image prune -af と deploy-service が競合し、
+    # 入れ替え中のイメージを消してしまうことがある。
+    # 途中で止めると半端な状態になるので cancel-in-progress は付けない。
+    # group にサービス名を入れるので、別サービスのデプロイは待たされない
+    concurrency:
+      group: hetzner-deploy-${{ inputs.service }}
+      cancel-in-progress: false
+
     permissions:
       contents: read
       packages: write
