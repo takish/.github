@@ -28,8 +28,15 @@ jobs:
     runs-on: ubuntu-latest
 
     # 上限を付けないと、固まったジョブは GitHub の上限 6 時間（360 分）まで
-    # 回り続けて無料枠を食う。このワークフローは appleboy/ssh-action を
-    # 4 回使っており、SSH はリモートの応答待ちなので固まりやすい
+    # 回り続けて無料枠を食う。
+    #
+    # 詰まりうるのは下の "Build and push Docker image"。素の run: で
+    # 上限が無く、docker build / docker push がレジストリやネットワークで
+    # 止まるとそのまま 6 時間まで回る。
+    #
+    # SSH の 4 ステップは appleboy/ssh-action が自分で区切っている
+    # （既定で timeout 30s = 接続、proxy_timeout 30s、command_timeout 10m）
+    # ので、こちらは元から上限がある。
     timeout-minutes: ${{ inputs.timeout_minutes }}
 
     # 同じサービスのデプロイは直列にする。続けてマージすると
